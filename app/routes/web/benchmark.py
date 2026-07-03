@@ -37,29 +37,73 @@ def validate_hardware_data(hardware: str) -> dict:
     except json.JSONDecodeError:
         raise HTTPException(400, "Invalid hardware format")
 
+    if not isinstance(hardware_dict, dict):
+        raise HTTPException(400, "Hardware must be a JSON object")
+
     # Always require 'renderer' and validate its value
-    if 'renderer' not in hardware_dict or len(hardware_dict['renderer']) <= 0:
+    if 'renderer' not in hardware_dict:
+        raise HTTPException(400, "Renderer must be present")
+
+    if not isinstance(hardware_dict['renderer'], str) or len(hardware_dict['renderer']) <= 0:
         raise HTTPException(400, "Renderer must be a valid string")
 
     if len(hardware_dict['renderer']) > 12:
         raise HTTPException(400, "Renderer must be less than 12 characters")
 
-    # If only 'renderer' is present, return early without further validation
-    if len(hardware_dict) == 1:
-        return hardware_dict
+    hardware_dict['renderer'] = hardware_dict['renderer'].strip()
 
-    # Otherwise, validate additional hardware keys
-    required_keys = [
+    optional_keys = {
+        'resolution',
+        'fullscreen',
+        'letterboxing'
+    }
+    full_hardware_keys = {
         'cpu', 'cores', 'threads',
         'gpu', 'ram', 'os',
         'motherboard_manufacturer',
         'motherboard'
-    ]
+    }
 
-    if not all(key in hardware_dict for key in required_keys):
+    allowed_keys = set(['renderer']) | optional_keys | full_hardware_keys
+    unknown_keys = set(hardware_dict.keys()) - allowed_keys
+
+    if unknown_keys:
+        raise HTTPException(400, "Unknown hardware information")
+
+    if (fullscreen := hardware_dict.get('fullscreen')) is not None:
+        if not isinstance(fullscreen, bool):
+            raise HTTPException(400, "Fullscreen must be a boolean")
+
+    if (letterboxing := hardware_dict.get('letterboxing')) is not None:
+        if not isinstance(letterboxing, bool):
+            raise HTTPException(400, "Letterboxing must be a boolean")
+
+    if (resolution := hardware_dict.get('resolution')) is not None:
+        if not isinstance(resolution, str) or len(resolution) <= 0 or len(resolution) > 32:
+            raise HTTPException(400, "Resolution must be a valid string")
+
+        resolution = resolution.strip().lower()
+        parts = resolution.split('x')
+
+        if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+            raise HTTPException(400, "Resolution must use WIDTHxHEIGHT format")
+
+        hardware_dict['resolution'] = resolution
+
+    # Full hardware info is optional.
+    # However, If any full hardware field is present, require the whole full hardware set.
+    # e.g. if 'cpu' is present, we expect the client to also provide the rest.
+    has_full_hardware = any(
+        key in hardware_dict and hardware_dict[key] is not None
+        for key in full_hardware_keys
+    )
+
+    if not has_full_hardware:
+        return hardware_dict
+
+    if not all(key in hardware_dict and hardware_dict[key] is not None for key in full_hardware_keys):
         raise HTTPException(400, "Missing required hardware information")
 
-    # Convert numeric fields and ensure they are valid
     try:
         hardware_dict['cores'] = int(hardware_dict['cores'])
         hardware_dict['threads'] = int(hardware_dict['threads'])
@@ -68,6 +112,7 @@ def validate_hardware_data(hardware: str) -> dict:
 
     try:
         hardware_dict['ram'] = int(hardware_dict['ram'])
+
         if hardware_dict['ram'] <= 0:
             raise ValueError
     except ValueError:
