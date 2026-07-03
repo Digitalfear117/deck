@@ -50,6 +50,8 @@ def validate_hardware_data(hardware: str) -> dict:
     if len(hardware_dict['renderer']) > 12:
         raise HTTPException(400, "Renderer must be less than 12 characters")
 
+    hardware_dict['renderer'] = hardware_dict['renderer'].strip()
+
     optional_keys = {
         'resolution',
         'fullscreen',
@@ -80,9 +82,13 @@ def validate_hardware_data(hardware: str) -> dict:
         if not isinstance(resolution, str) or len(resolution) <= 0 or len(resolution) > 32:
             raise HTTPException(400, "Resolution must be a valid string")
 
-        parts = resolution.lower().split('x')
+        resolution = resolution.strip().lower()
+        parts = resolution.split('x')
+
         if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
             raise HTTPException(400, "Resolution must use WIDTHxHEIGHT format")
+
+        hardware_dict['resolution'] = resolution
 
     # Full hardware info is optional.
     # However, If any full hardware field is present, require the whole full hardware set.
